@@ -42,11 +42,7 @@ def read_raw(source, sheet=0):
     """
     원본 엑셀 읽기 (경로 또는 파일객체 둘 다 지원)
     """
-    if isinstance(source, str) and source.lower().endswith(".xls"):
-        df = pd.read_excel(source, sheet_name=sheet, dtype=str, engine="xlrd")
-    else:
-        df = pd.read_excel(source, sheet_name=sheet, dtype=str, engine="openpyxl")
-        
+    df = pd.read_excel(source, sheet_name=sheet, dtype=str)
     cols_present = [c for c in SOURCE_COLS if c in df.columns]
     df = df[cols_present].copy()
 
@@ -80,17 +76,24 @@ def load_mapping(path: str):
     return df
 
 
-def load_mapping_from_filelike(file_like):
+def load_mapping_from_upload(file_like):
     """
-    업로드된 파일(스트림)에서 매핑 읽기
+    업로드된 매핑 파일(CSV 또는 XLSX)을 읽어서 DataFrame 반환
+    기대 컬럼: card_number_masked, employee_name, title, site
     """
-    df = pd.read_csv(file_like, dtype=str).fillna("")
+    name = getattr(file_like, "name", "").lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(file_like, dtype=str).fillna("")
+    elif name.endswith(".xlsx"):
+        df = pd.read_excel(file_like, dtype=str, engine="openpyxl").fillna("")
+    else:
+        raise ValueError("매핑 파일은 CSV 또는 XLSX만 지원합니다.")
+
     expected = {"card_number_masked","employee_name","title","site"}
     missing = expected - set(df.columns)
     if missing:
-        raise ValueError(f"매핑 CSV에 누락된 컬럼: {missing}")
+        raise ValueError(f"매핑 파일에 누락된 컬럼: {missing}")
     return df
-
 
 def _apply_currency_format(ws):
     """
