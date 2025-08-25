@@ -42,7 +42,11 @@ def read_raw(source, sheet=0):
     """
     원본 엑셀 읽기 (경로 또는 파일객체 둘 다 지원)
     """
-    df = pd.read_excel(source, sheet_name=sheet, dtype=str)
+    if isinstance(source, str) and source.lower().endswith(".xls"):
+        df = pd.read_excel(source, sheet_name=sheet, dtype=str, engine="xlrd")
+    else:
+        df = pd.read_excel(source, sheet_name=sheet, dtype=str, engine="openpyxl")
+        
     cols_present = [c for c in SOURCE_COLS if c in df.columns]
     df = df[cols_present].copy()
 
