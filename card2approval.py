@@ -63,23 +63,24 @@ def read_raw(source, sheet=0):
 
 def load_mapping(path: str):
     """
-    로컬/경로 CSV에서 매핑 읽기
-    기대 컬럼: card_number_masked, employee_name, title, site
+    로컬/경로 CSV에서 매핑 읽기 (title 없이도 OK)
+    기대 컬럼: card_number_masked, employee_name, site
     """
     if not os.path.exists(path):
         raise FileNotFoundError(f"매핑 CSV 경로를 찾을 수 없습니다: {path}")
     df = pd.read_csv(path, dtype=str).fillna("")
-    expected = {"card_number_masked","employee_name","title","site"}
-    missing = expected - set(df.columns)
+    expected_min = {"card_number_masked","employee_name","site"}
+    missing = expected_min - set(df.columns)
     if missing:
-        raise ValueError(f"매핑 CSV에 누락된 컬럼: {missing}")
+        raise ValueError(f"매핑 파일에 누락된 컬럼: {missing}")
+    # title이 있어도 무시, 없어도 문제 없음
     return df
 
 
 def load_mapping_from_upload(file_like):
     """
-    업로드된 매핑 파일(CSV 또는 XLSX)을 읽어서 DataFrame 반환
-    기대 컬럼: card_number_masked, employee_name, title, site
+    업로드된 매핑 파일(CSV 또는 XLSX) 읽기 (title 없이도 OK)
+    기대 컬럼: card_number_masked, employee_name, site
     """
     name = getattr(file_like, "name", "").lower()
     if name.endswith(".csv"):
@@ -89,10 +90,11 @@ def load_mapping_from_upload(file_like):
     else:
         raise ValueError("매핑 파일은 CSV 또는 XLSX만 지원합니다.")
 
-    expected = {"card_number_masked","employee_name","title","site"}
-    missing = expected - set(df.columns)
+    expected_min = {"card_number_masked","employee_name","site"}
+    missing = expected_min - set(df.columns)
     if missing:
         raise ValueError(f"매핑 파일에 누락된 컬럼: {missing}")
+    # title 있으면 무시
     return df
 
 def _apply_currency_format(ws):
@@ -114,8 +116,11 @@ def _build_workbook(df_raw, mapping, month_label: str) -> Workbook:
     # 매핑 병합
     df = df_raw.merge(mapping, left_on="카드번호", right_on="card_number_masked", how="left")
 
+    # ✅ 한글 컬럼 생성 (시트1/2/3에서 사용)
+    df["직원명"] = df.get("employee_name", "")
+    df["사업장"] = df.get("site", "")
     # '전체' 시트용 DF
-    whole_cols = SOURCE_COLS + ["employee_name","title","site"]
+    whole_cols = SOURCE_COLS + ["직원명","사업장"]
     whole_cols = [c for c in whole_cols if c in df.columns]
     df_whole = df[whole_cols].copy()
 
@@ -131,7 +136,7 @@ def _build_workbook(df_raw, mapping, month_label: str) -> Workbook:
     # 시트2/3: 판교/대전
     def add_filtered(name):
         ws = wb.create_sheet(title=name)
-        dfx = df_whole[df_whole["site"] == name].copy() if "site" in df_whole.columns else df_whole.iloc[0:0].copy()
+        dfx = df_whole[df_whole["사업장"] == name].copy() if "사업장" in df_whole.columns else df_whole.iloc[0:0].copy()
         for r in dataframe_to_rows(dfx, index=False, header=True):
             ws.append(r)
         _apply_currency_format(ws)
@@ -168,7 +173,7 @@ def _build_workbook(df_raw, mapping, month_label: str) -> Workbook:
         ws.cell(row=row_cursor, column=1).font = Font(bold=True)
         row_cursor += 1
 
-        for (emp, title_k, card_no), g in site_df.groupby(["employee_name","title","카드번호"], dropna=False):
+        for (emp, _), g in site_df.groupby(["employee_name","카드번호"], dropna=False):
             # 헤더 행
             for ci, val in enumerate(OUTPUT_ORDER, start=1):
                 c = ws.cell(row=row_cursor, column=ci, value=val)
@@ -203,7 +208,7 @@ def _build_workbook(df_raw, mapping, month_label: str) -> Workbook:
             # 직원 합계
             emp_sum = int(g["승인금액(원화)"].sum()) if "승인금액(원화)" in g.columns else 0
             ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=3)
-            total_label = ws.cell(row=row_cursor, column=1, value=f"{emp} {title_k} 합계")
+            total_label = ws.cell(row=row_cursor, column=1, value=f"{emp} 합계")
             total_label.font = Font(bold=True)
             total_label.alignment = Alignment(horizontal="center")
             total_amt = ws.cell(row=row_cursor, column=4, value=emp_sum)
